@@ -61,9 +61,12 @@ export default function Home() {
             <a href="#impact">Notre impact</a>
             <a href="#aide">Besoin d&apos;aide ?</a>
           </div>
-          <a className="button button-small" href="#don">
-            Faire un don <ArrowIcon />
-          </a>
+          <div className="navbar-actions">
+            <a className="login-button" href="/login">Se connecter</a>
+            <a className="button button-small" href="#don">
+              Faire un don <ArrowIcon />
+            </a>
+          </div>
         </nav>
 
         <div className="hero-content">
