@@ -1,0 +1,14 @@
+specVersion: "v1"
+serviceId: "projetintegration-7260f-service"
+location: "europe-west3"
+
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "solidarite-ensemble-fdc"
+
+connectorDirs:
+  - "./connector"

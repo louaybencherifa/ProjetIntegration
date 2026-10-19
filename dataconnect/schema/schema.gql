@@ -1,0 +1,263 @@
+# Firebase Data Connect schema (PostgreSQL / Cloud SQL)
+# Generated from: diagramme-classes-gestion-associations.drawio
+
+enum UserRole { DONOR BENEFICIARY SUPPLIER STAFF MANAGER SUPER_ADMIN }
+enum Department { SUPPORT REQUESTS ACCOUNTING }
+enum DonationStatus { PENDING CONFIRMED REFUSED }
+enum DonationMethod { BANK_TRANSFER CASH CHEQUE }
+enum RequestStatus { PENDING IN_REVIEW INFO_REQUESTED APPROVED REJECTED PAID }
+enum AidType { FOOD_COUPON MEDICAL HOUSING SCHOOL EMERGENCY }
+enum CouponStatus { AVAILABLE RESERVED USED EXPIRED CANCELLED }
+enum PaymentStatus { PENDING PAID }
+enum PaymentKind { AID_DISBURSEMENT SUPPLIER_REIMBURSEMENT }
+enum AssociationStatus { PENDING ACTIVE SUSPENDED }
+enum CampaignType { RAMADAN AID_EL_FITR AID_EL_ADHA BACK_TO_SCHOOL EMERGENCY OTHER }
+
+type User @table(key: "id") {
+  id: String! @default(expr: "auth.uid")
+  role: UserRole!
+  fullName: String!
+  email: String! @unique
+  phone: String
+  region: String
+  address: String
+  active: Boolean! @default(value: true)
+  twoFactorEnabled: Boolean! @default(value: false)
+  notifyEmailSms: Boolean! @default(value: true)
+  whatsappReminders: Boolean! @default(value: false)
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Donor @table {
+  user: User! @unique
+  totalDonated: Float! @col(dataType: "numeric(14,2)") @default(value: 0)
+  donationCount: Int! @default(value: 0)
+  familiesHelped: Int! @default(value: 0)
+}
+
+type Beneficiary @table {
+  user: User! @unique
+  family: Family!
+  cin: String! @unique
+  profileCompletion: Int! @default(value: 0)
+}
+
+type Supplier @table {
+  user: User! @unique
+  businessName: String!
+  taxId: String! @unique
+  category: String
+}
+
+type SuperAdmin @table {
+  user: User! @unique
+}
+
+type AssociationStaff @table {
+  user: User! @unique
+  association: Association!
+  position: String
+  department: Department
+  hiredAt: Date
+}
+
+type AssociationManager @table {
+  staff: AssociationStaff! @unique
+}
+
+type Association @table {
+  name: String!
+  registrationNumber: String! @unique
+  description: String @col(dataType: "text")
+  region: String
+  accountHolder: String
+  rib: String
+  status: AssociationStatus! @default(value: PENDING)
+  createdAt: Timestamp! @default(expr: "request.time")
+  validatedBy: SuperAdmin
+}
+
+type AssociationSupplier @table(key: ["association", "supplier"]) {
+  association: Association!
+  supplier: Supplier!
+}
+
+type FundsLedger @table(key: "association") {
+  association: Association!
+  confirmedDonations: Float! @col(dataType: "numeric(14,2)") @default(value: 0)
+  distributedAid: Float! @col(dataType: "numeric(14,2)") @default(value: 0)
+  reservedFunds: Float! @col(dataType: "numeric(14,2)") @default(value: 0)
+}
+
+type Campaign @table {
+  association: Association!
+  name: String!
+  type: CampaignType!
+  startDate: Date!
+  endDate: Date
+  targetAmount: Float @col(dataType: "numeric(14,2)")
+  active: Boolean! @default(value: true)
+}
+
+type Family @table {
+  familyId: String! @unique
+  headOfFamily: String!
+  membersCount: Int!
+  childrenCount: Int! @default(value: 0)
+  region: String
+  householdIncome: Float @col(dataType: "numeric(12,2)")
+  totalAidReceived: Float! @col(dataType: "numeric(14,2)") @default(value: 0)
+  lastAidDate: Date
+}
+
+type Donation @table {
+  reference: String! @unique
+  donor: Donor
+  association: Association!
+  campaign: Campaign
+  verifiedBy: AssociationStaff
+  amount: Float! @col(dataType: "numeric(12,2)")
+  donorName: String!
+  donorEmail: String!
+  submittedAt: Timestamp! @default(expr: "request.time")
+  method: DonationMethod!
+  receiptImage: String
+  status: DonationStatus! @default(value: PENDING)
+  verificationNote: String @col(dataType: "text")
+  verifiedAt: Timestamp
+}
+
+type AidRequest @table {
+  reference: String! @unique
+  beneficiary: Beneficiary!
+  family: Family!
+  association: Association!
+  campaign: Campaign
+  reviewedBy: AssociationStaff
+  type: AidType!
+  requestedAmount: Float @col(dataType: "numeric(12,2)")
+  mainReason: String
+  description: String @col(dataType: "text")
+  monthlyIncome: Float @col(dataType: "numeric(12,2)")
+  monthlyExpenses: Float @col(dataType: "numeric(12,2)")
+  employmentStatus: String
+  housingType: String
+  status: RequestStatus! @default(value: PENDING)
+  submittedAt: Timestamp! @default(expr: "request.time")
+  certifiedAccurate: Boolean! @default(value: false)
+}
+
+type SupportingDocument @table {
+  aidRequest: AidRequest!
+  fileName: String!
+  fileType: String
+  storagePath: String!
+  uploadedAt: Timestamp! @default(expr: "request.time")
+}
+
+type FamilyException @table {
+  aidRequest: AidRequest! @unique
+  approvedBy: AssociationManager!
+  reason: String! @col(dataType: "text")
+  approvedAt: Timestamp! @default(expr: "request.time")
+}
+
+type CouponBatch @table {
+  batchId: String! @unique
+  createdBy: AssociationManager!
+  campaign: Campaign!
+  couponType: AidType!
+  couponCount: Int!
+  valueEach: Float! @col(dataType: "numeric(12,2)")
+  totalReserved: Float! @col(dataType: "numeric(14,2)")
+  expiryDate: Date
+  description: String @col(dataType: "text")
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Coupon @table {
+  reference: String! @unique
+  code: String! @unique
+  qrCode: String
+  batch: CouponBatch
+  family: Family
+  aidRequest: AidRequest
+  redeemedBy: Supplier
+  type: AidType!
+  value: Float! @col(dataType: "numeric(12,2)")
+  issuedAt: Date
+  expiresAt: Date
+  redeemedAt: Timestamp
+  status: CouponStatus! @default(value: AVAILABLE)
+}
+
+type Payment @table {
+  paymentId: String! @unique
+  kind: PaymentKind!
+  relatedRef: String
+  supplier: Supplier
+  aidRequest: AidRequest
+  amount: Float! @col(dataType: "numeric(12,2)")
+  date: Date!
+  status: PaymentStatus! @default(value: PENDING)
+}
+
+type Notification @table {
+  user: User!
+  title: String!
+  message: String! @col(dataType: "text")
+  createdAt: Timestamp! @default(expr: "request.time")
+  isRead: Boolean! @default(value: false)
+}
+
+type SupportTicket @table {
+  user: User!
+  subject: String!
+  relatedReference: String
+  message: String! @col(dataType: "text")
+  status: String! @default(value: "OPEN")
+}
+
+type Conversation @table {
+  department: Department!
+  lastMessageAt: Timestamp
+}
+
+type ConversationParticipant @table(key: ["conversation", "user"]) {
+  conversation: Conversation!
+  user: User!
+}
+
+type Message @table {
+  conversation: Conversation!
+  sender: User!
+  content: String! @col(dataType: "text")
+  sentAt: Timestamp! @default(expr: "request.time")
+}
+
+type AuditLog @table {
+  user: User!
+  action: String!
+  performedAt: Timestamp! @default(expr: "request.time")
+  targetRef: String
+  details: String @col(dataType: "text")
+}
+
+type ContactMessage @table {
+  association: Association
+  fullName: String!
+  email: String!
+  subject: String!
+  message: String! @col(dataType: "text")
+  sentAt: Timestamp! @default(expr: "request.time")
+}
+
+type Report @table {
+  association: Association!
+  generatedBy: AssociationManager
+  period: String!
+  distributionRate: Float @col(dataType: "numeric(6,2)")
+  avgProcessingDays: Float @col(dataType: "numeric(6,2)")
+  couponsUsedRate: Float @col(dataType: "numeric(6,2)")
+  generatedAt: Timestamp! @default(expr: "request.time")
+}
