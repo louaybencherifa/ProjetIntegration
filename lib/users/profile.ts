@@ -1,4 +1,4 @@
-import { getDataConnectUser, upsertDataConnectUser } from "@/lib/dataconnect/operations";
+import { createBeneficiaryProfile, createDonorProfile, createSupplierProfile, getDataConnectUser, getDonorContext, upsertDataConnectUser } from "@/lib/dataconnect/operations";
 import { toDataConnectRole } from "@/lib/dataconnect/types";
 import type { UserRole } from "@/lib/users/roles";
 
@@ -8,6 +8,19 @@ export type UserProfile = {
   fullName: string;
   email: string;
   createdAt: string;
+  beneficiary?: {
+    cin: string;
+    familyId: string;
+    headOfFamily: string;
+    membersCount: number;
+    childrenCount: number;
+    region?: string;
+  };
+  supplier?: {
+    businessName: string;
+    taxId: string;
+    category?: string;
+  };
 };
 
 export async function saveUserProfile(profile: UserProfile) {
@@ -17,6 +30,16 @@ export async function saveUserProfile(profile: UserProfile) {
     fullName: profile.fullName,
     email: profile.email,
   });
+  if (profile.role === "donor") {
+    const donor = await getDonorContext(profile.uid);
+    if (donor.donors.length === 0) {
+      await createDonorProfile(profile.uid);
+    }
+  } else if (profile.role === "beneficiary" && profile.beneficiary) {
+    await createBeneficiaryProfile({ userId: profile.uid, familyKey: crypto.randomUUID(), ...profile.beneficiary });
+  } else if (profile.role === "partner" && profile.supplier) {
+    await createSupplierProfile({ userId: profile.uid, ...profile.supplier });
+  }
 }
 
 export async function getUserProfile(uid: string) {

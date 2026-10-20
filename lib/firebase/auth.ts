@@ -19,7 +19,7 @@ export async function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email.trim(), password);
 }
 
-export async function register(name: string, email: string, password: string, role: UserRole) {
+export async function register(name: string, email: string, password: string, role: UserRole, details?: Parameters<typeof saveUserProfile>[0]["beneficiary"] | Parameters<typeof saveUserProfile>[0]["supplier"]) {
   const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
   await updateProfile(credential.user, { displayName: name.trim() });
   await saveUserProfile({
@@ -28,6 +28,8 @@ export async function register(name: string, email: string, password: string, ro
     fullName: name.trim(),
     email: email.trim(),
     createdAt: new Date().toISOString(),
+    ...(role === "beneficiary" ? { beneficiary: details as Parameters<typeof saveUserProfile>[0]["beneficiary"] } : {}),
+    ...(role === "partner" ? { supplier: details as Parameters<typeof saveUserProfile>[0]["supplier"] } : {}),
   });
   return credential;
 }

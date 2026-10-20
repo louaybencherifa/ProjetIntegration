@@ -1,2 +1,5 @@
-import RolePlaceholder from "@/components/dashboard/role-placeholder";
-export default function BeneficiaryProfile() { return <RolePlaceholder role="beneficiary" title="Mon profil" description="Complétez vos informations pour faciliter votre accompagnement." />; }
+import AccountProfileForm from "@/components/users/account-profile-form";
+
+export default function BeneficiaryProfile() {
+  return <AccountProfileForm label="Espace bénéficiaire" />;
+}

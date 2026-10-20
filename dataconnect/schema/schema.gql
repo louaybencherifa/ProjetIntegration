@@ -12,6 +12,8 @@ enum PaymentStatus { PENDING PAID }
 enum PaymentKind { AID_DISBURSEMENT SUPPLIER_REIMBURSEMENT }
 enum AssociationStatus { PENDING ACTIVE SUSPENDED }
 enum CampaignType { RAMADAN AID_EL_FITR AID_EL_ADHA BACK_TO_SCHOOL EMERGENCY OTHER }
+enum ServiceStatus { ACTIVE INACTIVE }
+enum OrderStatus { REQUESTED ACCEPTED IN_PROGRESS COMPLETED CANCELLED }
 
 type User @table(key: "id") {
   id: String! @default(expr: "auth.uid")
@@ -200,6 +202,29 @@ type Payment @table {
   amount: Float! @col(dataType: "numeric(12,2)")
   date: Date!
   status: PaymentStatus! @default(value: PENDING)
+}
+
+type SupplierService @table {
+  supplier: Supplier!
+  name: String!
+  description: String @col(dataType: "text")
+  category: String
+  price: Float @col(dataType: "numeric(12,2)")
+  status: ServiceStatus! @default(value: ACTIVE)
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type ServiceOrder @table {
+  reference: String! @unique
+  service: SupplierService!
+  supplier: Supplier!
+  association: Association!
+  requestedBy: User!
+  quantity: Int! @default(value: 1)
+  totalAmount: Float @col(dataType: "numeric(12,2)")
+  status: OrderStatus! @default(value: REQUESTED)
+  requestedAt: Timestamp! @default(expr: "request.time")
+  completedAt: Timestamp
 }
 
 type Notification @table {

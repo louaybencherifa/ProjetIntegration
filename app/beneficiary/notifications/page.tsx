@@ -1,2 +1,5 @@
-import RolePlaceholder from "@/components/dashboard/role-placeholder";
-export default function BeneficiaryNotifications() { return <RolePlaceholder role="beneficiary" title="Mes notifications" description="Suivez les mises à jour de vos demandes et de votre accompagnement." />; }
+import NotificationsList from "@/components/users/notifications-list";
+
+export default function BeneficiaryNotifications() {
+  return <NotificationsList label="Espace bénéficiaire" />;
+}

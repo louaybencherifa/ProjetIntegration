@@ -1,4 +1,4 @@
-query getUserById($id: String!) @auth(level: USER) {
+query getUserById($id: String!) @auth(expr: "auth.uid == vars.id") {
   users(where: { id: { eq: $id } }, limit: 1) {
     id
     role
@@ -20,7 +20,7 @@ mutation upsertUserProfile(
   $role: UserRole!
   $fullName: String!
   $email: String!
-) @auth(level: USER) {
+) @auth(expr: "auth.uid == vars.id && (vars.role == 'DONOR' || vars.role == 'BENEFICIARY' || vars.role == 'SUPPLIER')") {
   user_upsert(data: {
     id: $id
     role: $role
@@ -29,7 +29,29 @@ mutation upsertUserProfile(
   })
 }
 
-query listDonationsForUser($userId: String!) @auth(level: USER) {
+mutation updateUserSettings(
+  $id: String!
+  $fullName: String!
+  $phone: String
+  $region: String
+  $address: String
+  $notifyEmailSms: Boolean!
+  $whatsappReminders: Boolean!
+) @auth(expr: "auth.uid == vars.id") {
+  user_update(
+    key: { id: $id }
+    data: {
+      fullName: $fullName
+      phone: $phone
+      region: $region
+      address: $address
+      notifyEmailSms: $notifyEmailSms
+      whatsappReminders: $whatsappReminders
+    }
+  )
+}
+
+query listDonationsForUser($userId: String!) @auth(expr: "auth.uid == vars.userId") {
   donations(
     where: { donor: { user: { id: { eq: $userId } } } }
     orderBy: [{ submittedAt: DESC }]
@@ -47,11 +69,90 @@ query listDonationsForUser($userId: String!) @auth(level: USER) {
   }
 }
 
-query listAidRequestsForUser($userId: String!) @auth(level: USER) {
+query getDonorContext($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  donors(where: { user: { id: { eq: $userId } } }, limit: 1) {
+    id
+  }
+}
+
+mutation createDonorProfile($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  donor_insert(data: { user: { id: $userId } })
+}
+
+mutation createBeneficiaryProfile(
+  $userId: String!
+  $familyKey: UUID!
+  $familyId: String!
+  $headOfFamily: String!
+  $membersCount: Int!
+  $childrenCount: Int!
+  $region: String
+  $cin: String!
+) @auth(expr: "auth.uid == vars.userId") {
+  family_insert(data: {
+    id: $familyKey
+    familyId: $familyId
+    headOfFamily: $headOfFamily
+    membersCount: $membersCount
+    childrenCount: $childrenCount
+    region: $region
+  })
+  beneficiary_insert(data: {
+    user: { id: $userId }
+    family: { id: $familyKey }
+    cin: $cin
+  })
+}
+
+mutation createSupplierProfile(
+  $userId: String!
+  $businessName: String!
+  $taxId: String!
+  $category: String
+) @auth(expr: "auth.uid == vars.userId") {
+  supplier_insert(data: {
+    user: { id: $userId }
+    businessName: $businessName
+    taxId: $taxId
+    category: $category
+  })
+}
+
+mutation createDonation(
+  $reference: String!
+  $donorId: UUID!
+  $associationId: UUID!
+  $amount: Float!
+  $donorName: String!
+  $donorEmail: String!
+  $method: DonationMethod!
+  $receiptImage: String
+) @auth(level: USER) {
+  donation_insert(data: {
+    reference: $reference
+    donor: { id: $donorId }
+    association: { id: $associationId }
+    amount: $amount
+    donorName: $donorName
+    donorEmail: $donorEmail
+    method: $method
+    receiptImage: $receiptImage
+  })
+}
+
+query listDonationAssociations @auth(level: USER) {
+  associations(where: { status: { eq: ACTIVE } }, orderBy: [{ name: ASC }]) {
+    id
+    name
+  }
+}
+
+query listAidRequestsForUser($userId: String!) @auth(expr: "auth.uid == vars.userId") {
   aidRequests(
     where: { beneficiary: { user: { id: { eq: $userId } } } }
     orderBy: [{ submittedAt: DESC }]
   ) {
+    id
     reference
     type
     requestedAmount
@@ -63,7 +164,35 @@ query listAidRequestsForUser($userId: String!) @auth(level: USER) {
   }
 }
 
-query listNotificationsForUser($userId: String!) @auth(level: USER) {
+query listDocumentsForBeneficiary($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  supportingDocuments(
+    where: { aidRequest: { beneficiary: { user: { id: { eq: $userId } } } } }
+    orderBy: [{ uploadedAt: DESC }]
+  ) {
+    id
+    fileName
+    fileType
+    storagePath
+    uploadedAt
+    aidRequest { id reference }
+  }
+}
+
+mutation createSupportingDocument(
+  $aidRequestId: UUID!
+  $fileName: String!
+  $fileType: String
+  $storagePath: String!
+) @auth(level: USER) {
+  supportingDocument_insert(data: {
+    aidRequest: { id: $aidRequestId }
+    fileName: $fileName
+    fileType: $fileType
+    storagePath: $storagePath
+  })
+}
+
+query listNotificationsForUser($userId: String!) @auth(expr: "auth.uid == vars.userId") {
   notifications(
     where: { user: { id: { eq: $userId } } }
     orderBy: [{ createdAt: DESC }]
@@ -76,7 +205,80 @@ query listNotificationsForUser($userId: String!) @auth(level: USER) {
   }
 }
 
-query listPaymentsForSupplier($userId: String!) @auth(level: USER) {
+query listConversationsForUser($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  conversationParticipants(
+    where: { user: { id: { eq: $userId } } }
+    orderBy: [{ conversation: { lastMessageAt: DESC } }]
+  ) {
+    conversation {
+      id
+      department
+      lastMessageAt
+    }
+  }
+}
+
+query listSupportConversations @auth(level: USER) {
+  conversations(orderBy: [{ lastMessageAt: DESC }]) {
+    id
+    department
+    lastMessageAt
+  }
+}
+
+query listMessagesForConversation($conversationId: UUID!) @auth(level: USER) {
+  messages(
+    where: { conversation: { id: { eq: $conversationId } } }
+    orderBy: [{ sentAt: ASC }]
+  ) {
+    id
+    content
+    sentAt
+    sender { id fullName role }
+  }
+}
+
+mutation createConversation(
+  $conversationId: UUID!
+  $userId: String!
+  $department: Department!
+  $content: String!
+) @auth(expr: "auth.uid == vars.userId") {
+  conversation_insert(data: { id: $conversationId, department: $department })
+  conversationParticipant_insert(data: {
+    conversation: { id: $conversationId }
+    user: { id: $userId }
+  })
+  message_insert(data: {
+    conversation: { id: $conversationId }
+    sender: { id: $userId }
+    content: $content
+  })
+}
+
+mutation sendConversationMessage(
+  $conversationId: UUID!
+  $senderId: String!
+  $content: String!
+) @auth(expr: "auth.uid == vars.senderId") {
+  message_insert(data: {
+    conversation: { id: $conversationId }
+    sender: { id: $senderId }
+    content: $content
+  })
+}
+
+mutation addConversationParticipant(
+  $conversationId: UUID!
+  $userId: String!
+) @auth(level: USER) {
+  conversationParticipant_upsert(data: {
+    conversation: { id: $conversationId }
+    user: { id: $userId }
+  })
+}
+
+query listPaymentsForSupplier($userId: String!) @auth(expr: "auth.uid == vars.userId") {
   payments(
     where: { supplier: { user: { id: { eq: $userId } } } }
     orderBy: [{ date: DESC }]
@@ -87,6 +289,58 @@ query listPaymentsForSupplier($userId: String!) @auth(level: USER) {
     amount
     date
     status
+  }
+}
+
+query listServicesForSupplier($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  supplierServices(where: { supplier: { user: { id: { eq: $userId } } } }, orderBy: [{ createdAt: DESC }]) {
+    id
+    name
+    description
+    category
+    price
+    status
+    createdAt
+  }
+}
+
+query getSupplierContext($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  suppliers(where: { user: { id: { eq: $userId } } }, limit: 1) {
+    id
+    businessName
+    taxId
+    category
+  }
+}
+
+mutation createSupplierService(
+  $supplierId: UUID!
+  $name: String!
+  $description: String
+  $category: String
+  $price: Float
+) @auth(level: USER) {
+  supplierService_insert(data: {
+    supplier: { id: $supplierId }
+    name: $name
+    description: $description
+    category: $category
+    price: $price
+  })
+}
+
+query listOrdersForSupplier($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  serviceOrders(where: { supplier: { user: { id: { eq: $userId } } } }, orderBy: [{ requestedAt: DESC }]) {
+    id
+    reference
+    quantity
+    totalAmount
+    status
+    requestedAt
+    completedAt
+    requestedBy { id }
+    service { name }
+    association { name }
   }
 }
 
@@ -135,7 +389,7 @@ query listActiveAssociations @auth(level: USER) {
   }
 }
 
-query getBeneficiaryContext($userId: String!) @auth(level: USER) {
+query getBeneficiaryContext($userId: String!) @auth(expr: "auth.uid == vars.userId") {
   beneficiaries(where: { user: { id: { eq: $userId } } }) {
     id
     family { id familyId }
@@ -150,6 +404,594 @@ query ListAssociations @auth(level: PUBLIC) {
     status
   }
 }
-mutation CreateAssociation($name: String!, $registrationNumber: String!, $region: String) @auth(level: PUBLIC) {
+mutation CreateAssociation($name: String!, $registrationNumber: String!, $region: String) @auth(level: USER) {
   association_insert(data: {name: $name, registrationNumber: $registrationNumber, region: $region})
+}
+
+query listPendingDonations @auth(level: USER) {
+  donations(where: { status: { eq: PENDING } }, orderBy: [{ submittedAt: ASC }]) {
+    id
+    reference
+    amount
+    donorName
+    donorEmail
+    submittedAt
+    method
+    receiptImage
+    status
+    donor { user { id } }
+    association { name }
+  }
+}
+
+query listStaffAidRequests @auth(level: USER) {
+  aidRequests(orderBy: [{ submittedAt: ASC }]) {
+    id
+    reference
+    type
+    requestedAmount
+    mainReason
+    description
+    status
+    submittedAt
+    beneficiary { user { id fullName email } }
+    family { id familyId membersCount childrenCount region }
+    association { name }
+  }
+}
+
+query listAvailableCouponsForAssignment @auth(level: USER) {
+  coupons(
+    where: { status: { eq: AVAILABLE } }
+    orderBy: [{ expiresAt: ASC }]
+  ) {
+    id
+    reference
+    code
+    type
+    value
+    expiresAt
+    status
+  }
+}
+
+query listCouponsForBeneficiary($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  coupons(
+    where: { aidRequest: { beneficiary: { user: { id: { eq: $userId } } } } }
+    orderBy: [{ expiresAt: ASC }]
+  ) {
+    id
+    reference
+    code
+    type
+    value
+    expiresAt
+    status
+    family { familyId }
+    aidRequest { reference }
+  }
+}
+
+query listCouponsForFamily($familyId: UUID!, $userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  coupons(
+    where: {
+      family: { id: { eq: $familyId } }
+      status: { in: [RESERVED, USED] }
+    }
+  ) {
+    id
+    status
+    aidRequest { reference }
+  }
+}
+
+query listFamilyExceptionsForRequest($aidRequestId: UUID!, $userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  familyExceptions(where: { aidRequest: { id: { eq: $aidRequestId } } }, limit: 1) {
+    id
+  }
+}
+
+mutation assignCouponToAidRequest(
+  $couponId: UUID!
+  $familyId: UUID!
+  $aidRequestId: UUID!
+  $notifyUserId: String!
+  $notificationMessage: String!
+) @auth(level: USER) {
+  coupon_update(
+    key: { id: $couponId }
+    data: {
+      family: { id: $familyId }
+      aidRequest: { id: $aidRequestId }
+      status: RESERVED
+    }
+  )
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Coupon attribué"
+    message: $notificationMessage
+  })
+}
+
+query listFamilyExceptionCandidates @auth(level: USER) {
+  aidRequests(
+    where: { status: { in: [REJECTED, INFO_REQUESTED] } }
+    orderBy: [{ submittedAt: ASC }]
+  ) {
+    id
+    reference
+    type
+    requestedAmount
+    mainReason
+    description
+    status
+    submittedAt
+    beneficiary { user { fullName email } }
+    family { familyId membersCount childrenCount region }
+    association { name }
+  }
+}
+
+mutation approveFamilyException(
+  $aidRequestId: UUID!
+  $managerId: UUID!
+  $reason: String!
+) @auth(level: USER) {
+  familyException_insert(data: {
+    aidRequest: { id: $aidRequestId }
+    approvedBy: { id: $managerId }
+    reason: $reason
+  })
+  aidRequest_update(key: { id: $aidRequestId }, data: { status: APPROVED })
+}
+
+mutation reviewAidRequest(
+  $id: UUID!
+  $status: RequestStatus!
+  $notifyUserId: String!
+  $notificationMessage: String!
+) @auth(level: USER) {
+  aidRequest_update(key: { id: $id }, data: { status: $status })
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Mise à jour de votre demande"
+    message: $notificationMessage
+  })
+}
+
+query listSupportTickets @auth(level: USER) {
+  supportTickets(orderBy: [{ id: DESC }]) {
+    id
+    subject
+    message
+    relatedReference
+    status
+    user { fullName email }
+  }
+}
+
+mutation updateSupportTicketStatus($id: UUID!, $status: String!) @auth(level: USER) {
+  supportTicket_update(key: { id: $id }, data: { status: $status })
+}
+
+query listAdminAssociations @auth(level: USER) {
+  associations(orderBy: [{ createdAt: DESC }]) {
+    id
+    name
+    registrationNumber
+    region
+    status
+    createdAt
+  }
+}
+
+mutation updateAssociationStatus($id: UUID!, $status: AssociationStatus!, $actorId: String!) @auth(expr: "auth.uid == vars.actorId") {
+  association_update(key: { id: $id }, data: { status: $status })
+}
+
+query listManagerCampaigns @auth(level: USER) {
+  campaigns(orderBy: [{ startDate: DESC }]) {
+    id
+    name
+    type
+    startDate
+    endDate
+    targetAmount
+    active
+    association { id name }
+  }
+}
+
+mutation createCampaign(
+  $associationId: UUID!
+  $name: String!
+  $type: CampaignType!
+  $startDate: Date!
+  $endDate: Date
+  $targetAmount: Float
+) @auth(level: USER) {
+  campaign_insert(data: {
+    association: { id: $associationId }
+    name: $name
+    type: $type
+    startDate: $startDate
+    endDate: $endDate
+    targetAmount: $targetAmount
+  })
+}
+
+mutation updateCampaignStatus($id: UUID!, $active: Boolean!) @auth(level: USER) {
+  campaign_update(key: { id: $id }, data: { active: $active })
+}
+
+query listCouponBatches @auth(level: USER) {
+  couponBatches(orderBy: [{ createdAt: DESC }]) {
+    id
+    batchId
+    couponType
+    couponCount
+    valueEach
+    totalReserved
+    expiryDate
+    description
+    createdAt
+    campaign { name }
+  }
+}
+
+query getManagerContext($userId: String!) @auth(expr: "auth.uid == vars.userId") {
+  associationManagers(where: { staff: { user: { id: { eq: $userId } } } }, limit: 1) {
+    id
+    staff { association { id name } }
+  }
+}
+
+query listActiveSupplierServices @auth(level: USER) {
+  supplierServices(where: { status: { eq: ACTIVE } }, orderBy: [{ createdAt: DESC }]) {
+    id
+    name
+    description
+    category
+    price
+    supplier { id businessName }
+  }
+}
+
+mutation createServiceOrder(
+  $reference: String!
+  $serviceId: UUID!
+  $supplierId: UUID!
+  $associationId: UUID!
+  $requestedBy: String!
+  $quantity: Int!
+  $totalAmount: Float
+) @auth(expr: "auth.uid == vars.requestedBy") {
+  serviceOrder_insert(data: {
+    reference: $reference
+    service: { id: $serviceId }
+    supplier: { id: $supplierId }
+    association: { id: $associationId }
+    requestedBy: { id: $requestedBy }
+    quantity: $quantity
+    totalAmount: $totalAmount
+  })
+}
+
+mutation createCouponBatch(
+  $batchId: String!
+  $managerId: UUID!
+  $campaignId: UUID!
+  $couponType: AidType!
+  $couponCount: Int!
+  $valueEach: Float!
+  $totalReserved: Float!
+  $expiryDate: Date
+  $description: String
+) @auth(level: USER) {
+  couponBatch_insert(data: {
+    batchId: $batchId
+    createdBy: { id: $managerId }
+    campaign: { id: $campaignId }
+    couponType: $couponType
+    couponCount: $couponCount
+    valueEach: $valueEach
+    totalReserved: $totalReserved
+    expiryDate: $expiryDate
+    description: $description
+  })
+}
+
+mutation createCoupon(
+  $reference: String!
+  $code: String!
+  $batchId: UUID!
+  $type: AidType!
+  $value: Float!
+  $expiresAt: Date
+) @auth(level: USER) {
+  coupon_insert(data: {
+    reference: $reference
+    code: $code
+    batch: { id: $batchId }
+    type: $type
+    value: $value
+    expiresAt: $expiresAt
+  })
+}
+
+query listCouponsForBatch($batchId: UUID!) @auth(level: USER) {
+  coupons(where: { batch: { id: { eq: $batchId } } }, orderBy: [{ issuedAt: DESC }]) {
+    id
+    reference
+    code
+    type
+    value
+    expiresAt
+    status
+  }
+}
+
+query listExpiredCoupons($today: Date!) @auth(level: USER) {
+  coupons(
+    where: {
+      status: { in: [AVAILABLE, RESERVED] }
+      expiresAt: { lt: $today }
+    }
+    orderBy: [{ expiresAt: ASC }]
+  ) {
+    id
+    reference
+    code
+    type
+    value
+    expiresAt
+    status
+  }
+}
+
+mutation markCouponExpired($id: UUID!) @auth(level: USER) {
+  coupon_update(key: { id: $id }, data: { status: EXPIRED })
+}
+
+query getCouponByCode($code: String!) @auth(level: USER) {
+  coupons(where: { code: { eq: $code } }, limit: 1) {
+    id
+    reference
+    code
+    type
+    value
+    status
+    expiresAt
+    family { familyId }
+    aidRequest { reference }
+  }
+}
+
+mutation redeemCoupon(
+  $id: UUID!
+  $supplierId: UUID!
+  $redeemedAt: Timestamp!
+  $paymentId: String!
+  $paymentDate: Date!
+  $amount: Float!
+  $notifyUserId: String!
+) @auth(level: USER) {
+  coupon_update(
+    key: { id: $id }
+    data: { status: USED, redeemedBy: { id: $supplierId }, redeemedAt: $redeemedAt }
+  )
+  payment_insert(data: {
+    paymentId: $paymentId
+    kind: SUPPLIER_REIMBURSEMENT
+    relatedRef: $paymentId
+    supplier: { id: $supplierId }
+    amount: $amount
+    date: $paymentDate
+  })
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Remboursement créé"
+    message: "Un remboursement interne est en attente de validation."
+  })
+}
+
+query listPendingPayments @auth(level: USER) {
+  payments(where: { status: { eq: PENDING } }, orderBy: [{ date: ASC }]) {
+    id
+    paymentId
+    kind
+    relatedRef
+    amount
+    date
+    status
+    supplier { businessName user { id } }
+    aidRequest { reference }
+  }
+}
+
+mutation markPaymentPaid($id: UUID!, $notifyUserId: String!, $actorId: String!) @auth(expr: "auth.uid == vars.actorId") {
+  payment_update(key: { id: $id }, data: { status: PAID })
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Remboursement validé"
+    message: "Votre remboursement interne a été marqué comme payé."
+  })
+}
+
+query listManagerReports @auth(level: USER) {
+  reports(orderBy: [{ generatedAt: DESC }]) {
+    id
+    period
+    distributionRate
+    avgProcessingDays
+    couponsUsedRate
+    generatedAt
+    association { name }
+  }
+}
+
+query getManagerReportMetrics($associationId: UUID!) @auth(level: USER) {
+  donations(where: { association: { id: { eq: $associationId } } }) {
+    amount
+    status
+  }
+  aidRequests(where: { association: { id: { eq: $associationId } } }) {
+    submittedAt
+    status
+  }
+  coupons(where: { batch: { campaign: { association: { id: { eq: $associationId } } } } }) {
+    status
+  }
+}
+
+mutation createManagerReport(
+  $associationId: UUID!
+  $managerId: UUID!
+  $period: String!
+  $distributionRate: Float
+  $avgProcessingDays: Float
+  $couponsUsedRate: Float
+) @auth(level: USER) {
+  report_insert(data: {
+    association: { id: $associationId }
+    generatedBy: { id: $managerId }
+    period: $period
+    distributionRate: $distributionRate
+    avgProcessingDays: $avgProcessingDays
+    couponsUsedRate: $couponsUsedRate
+  })
+}
+
+query listUsersForAdmin @auth(level: USER) {
+  users(orderBy: [{ createdAt: DESC }]) {
+    id
+    role
+    fullName
+    email
+    active
+    createdAt
+  }
+}
+
+query listAdminAssignmentData @auth(level: USER) {
+  users(where: { role: { in: [STAFF, MANAGER] } }, orderBy: [{ fullName: ASC }]) {
+    id
+    role
+    fullName
+    email
+    active
+    createdAt
+  }
+  associations(where: { status: { eq: ACTIVE } }, orderBy: [{ name: ASC }]) {
+    id
+    name
+  }
+}
+
+query getStaffAssignment($userId: String!) @auth(level: USER) {
+  associationStaffs(where: { user: { id: { eq: $userId } } }, limit: 1) {
+    id
+    association { id name }
+    department
+    position
+  }
+}
+
+query getManagerAssignment($staffId: UUID!) @auth(level: USER) {
+  associationManagers(where: { staff: { id: { eq: $staffId } } }, limit: 1) {
+    id
+  }
+}
+
+mutation assignStaffToAssociation(
+  $staffId: UUID!
+  $userId: String!
+  $associationId: UUID!
+  $department: Department
+  $position: String
+) @auth(level: USER) {
+  associationStaff_upsert(data: {
+    id: $staffId
+    user: { id: $userId }
+    association: { id: $associationId }
+    department: $department
+    position: $position
+  })
+}
+
+mutation promoteStaffToManager($managerId: UUID!, $staffId: UUID!, $actorId: String!) @auth(expr: "auth.uid == vars.actorId") {
+  associationManager_upsert(data: { id: $managerId, staff: { id: $staffId } })
+}
+
+mutation updateUserActiveStatus($id: String!, $active: Boolean!, $actorId: String!) @auth(expr: "auth.uid == vars.actorId") {
+  user_update(key: { id: $id }, data: { active: $active })
+}
+
+mutation updateUserRole($id: String!, $role: UserRole!, $actorId: String!) @auth(expr: "auth.uid == vars.actorId") {
+  user_update(key: { id: $id }, data: { role: $role })
+}
+
+mutation updateSupplierOrderStatus(
+  $id: UUID!
+  $status: OrderStatus!
+  $notifyUserId: String!
+  $actorId: String!
+  $targetRef: String!
+  $statusText: String!
+) @auth(expr: "auth.uid == vars.actorId") {
+  serviceOrder_update(key: { id: $id }, data: { status: $status })
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Mise à jour de votre commande"
+    message: "Le partenaire a mis à jour le statut de votre commande."
+  })
+  auditLog_insert(data: {
+    user: { id: $actorId }
+    action: "ORDER_STATUS_CHANGED"
+    targetRef: $targetRef
+    details: $statusText
+  })
+}
+
+query listAuditLogs @auth(level: USER) {
+  auditLogs(orderBy: [{ performedAt: DESC }]) {
+    id
+    action
+    performedAt
+    targetRef
+    details
+    user { fullName email }
+  }
+}
+
+mutation createAuditLog(
+  $userId: String!
+  $action: String!
+  $targetRef: String
+  $details: String
+) @auth(expr: "auth.uid == vars.userId") {
+  auditLog_insert(data: {
+    user: { id: $userId }
+    action: $action
+    targetRef: $targetRef
+    details: $details
+  })
+}
+
+mutation markDonationVerified(
+  $id: UUID!
+  $status: DonationStatus!
+  $verificationNote: String
+  $notifyUserId: String!
+  $notificationMessage: String!
+) @auth(level: USER) {
+  donation_update(
+    key: { id: $id }
+    data: { status: $status, verificationNote: $verificationNote }
+  )
+  notification_insert(data: {
+    user: { id: $notifyUserId }
+    title: "Mise à jour de votre don"
+    message: $notificationMessage
+  })
 }
